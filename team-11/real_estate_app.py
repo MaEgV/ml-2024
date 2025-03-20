@@ -107,7 +107,7 @@ def train_models(df):
     for name, model in models.items():
         y_pred = model.predict(X_test)
         mae_val = mean_absolute_error(y_test, y_pred)
-        rmse_val = mean_squared_error(y_test, y_pred, squared=False)
+        rmse_val = np.sqrt(mean_squared_error(y_test, y_pred))
         r2_val = r2_score(y_test, y_pred)
         metrics.append({
             "Модель": name,
@@ -123,7 +123,7 @@ def train_models(df):
     joblib.dump(xgb_model, "model_xgb.pkl")
 
     metrics_df = pd.DataFrame(metrics)
-    metrics_df.to_csv("model_metrics_comparison.csv", index=False)
+    metrics_df.to_csv("res/model_metrics_comparison.csv", index=False)
     print("Метрики моделей сохранены в 'model_metrics_comparison.csv'")
 
     corr_matrix = df.corr()
@@ -139,7 +139,7 @@ def plot_visualizations(df, corr_matrix, models, X_test, y_test):
     sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="coolwarm")
     plt.title("Матрица корреляций признаков")
     plt.tight_layout()
-    plt.savefig("correlation_heatmap.png")
+    plt.savefig("res/correlation_heatmap.png")
     plt.close()
 
     # Гистограмма распределения цен
@@ -149,7 +149,7 @@ def plot_visualizations(df, corr_matrix, models, X_test, y_test):
     plt.xlabel("Цена")
     plt.ylabel("Количество объектов")
     plt.tight_layout()
-    plt.savefig("price_distribution.png")
+    plt.savefig("res/price_distribution.png")
     plt.close()
 
     # Сравнение RMSE для моделей
@@ -157,14 +157,14 @@ def plot_visualizations(df, corr_matrix, models, X_test, y_test):
     rmse_values = []
     for model in models.values():
         y_pred = model.predict(X_test)
-        rmse_val = mean_squared_error(y_test, y_pred, squared=False)
+        rmse_val = mean_squared_error(y_test, y_pred)
         rmse_values.append(rmse_val)
     plt.figure(figsize=(6, 4))
     sns.barplot(x=model_names, y=rmse_values)
     plt.title("Сравнение RMSE моделей")
     plt.ylabel("RMSE (ниже лучше)")
     plt.tight_layout()
-    plt.savefig("model_rmse_comparison.png")
+    plt.savefig("res/model_rmse_comparison.png")
     plt.close()
 
     # Фактические vs Предсказанные цены для Random Forest
@@ -177,7 +177,7 @@ def plot_visualizations(df, corr_matrix, models, X_test, y_test):
     plt.ylabel("Предсказанная цена")
     plt.title("Фактическая vs Предсказанная цена (Random Forest)")
     plt.tight_layout()
-    plt.savefig("actual_vs_predicted_rf.png")
+    plt.savefig("res/actual_vs_predicted_rf.png")
     plt.close()
 
     print("Графики сохранены как PNG-файлы.")
