@@ -1,18 +1,22 @@
-# Используем официальный образ Python (например, версии 3.9-slim)
+# Используем официальный образ Python 3.9-slim
 FROM python:3.9-slim
 
-# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем файл зависимостей и устанавливаем пакеты
+# Устанавливаем необходимые системные зависимости (например, unzip)
+RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/*
+
+# Копируем файл зависимостей и устанавливаем пакеты (включая kaggle)
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Копируем весь исходный код в контейнер
+# Создаем директорию для файла kaggle.json и задаем нужные права
+RUN mkdir -p /root/.kaggle && chmod 600 /root/.kaggle/kaggle.json
+
+# Копируем исходный код в контейнер
 COPY . .
 
-# Открываем порт, который использует Streamlit (по умолчанию 8501)
 EXPOSE 8501
 
-# Команда для запуска Streamlit-приложения
+# По умолчанию запускается Streamlit-приложение
 CMD ["streamlit", "run", "real_estate_app.py", "--", "--streamlit"]

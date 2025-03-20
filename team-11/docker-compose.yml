@@ -1,7 +1,22 @@
 version: '3.8'
 
 services:
-  real_estate_app:
+  real_estate_ui:
     build: .
     ports:
       - "8501:8501"
+    command: streamlit run real_estate_app.py -- --streamlit
+    volumes:
+      - .:/app
+    environment:
+      - OMP_NUM_THREADS=8
+      - MKL_NUM_THREADS=8
+
+  real_estate_analysis:
+    build: .
+    command: python real_estate_app.py
+    volumes:
+      - .:/app
+    environment:
+      - OMP_NUM_THREADS=8
+      - MKL_NUM_THREADS=8

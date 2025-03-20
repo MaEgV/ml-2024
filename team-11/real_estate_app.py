@@ -1,15 +1,25 @@
+import os
+import zipfile
+import subprocess
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 import joblib
-import os
 import argparse
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.experimental import enable_hist_gradient_boosting
+from sklearn.ensemble import HistGradientBoostingRegressor
+from xgboost import XGBRegressor
+
+# Обучаем модели с использованием всех доступных ядер для тех, которые поддерживают n_jobs.
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+gb_model = HistGradientBoostingRegressor(max_iter=100, random_state=42, loss='least_squares')
+xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42, n_jobs=-1)
 
 
 # ======================
@@ -17,42 +27,45 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 # ======================
 def load_data(csv_file='russia_real_estate_2021.csv'):
     """
-    Загрузка датасета из CSV-файла.
+    Загружает датасет
     """
-    df = pd.read_csv(csv_file)
+    df = pd.read_csv(csv_file, delimiter=";")
     return df
 
 
 def preprocess_data(df):
     """
-    Очистка данных:
-      - Удаление строк с отсутствующими значениями в ключевых столбцах.
-      - Удаление выбросов по цене и площади с помощью IQR.
-      - Кодирование категориальных признаков (LabelEncoder для 'object_type' и One-Hot для 'region').
+    Предобработка данных:
+    - Удаляются столбцы: date, postal_code, street_id, id_region, house_id
+    - Удаляются строки с пропусками в ключевых признаках
+    - Приведение типов для числовых признаков
+    - Удаление выбросов по цене и площади
     """
+    # Удаляем ненужные столбцы
+    cols_to_drop = ["date", "postal_code", "street_id", "id_region", "house_id"]
+    df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
+
     # Удаляем строки с пропусками в ключевых столбцах
-    df = df.dropna(subset=['price', 'area', 'rooms', 'location'])
+    df = df.dropna(subset=["price", "area", "rooms", "level", "levels", "kitchen_area", "geo_lat", "geo_lon"])
 
-    # Удаляем выбросы по цене
-    Q1 = df['price'].quantile(0.25)
-    Q3 = df['price'].quantile(0.75)
+    # Приводим столбцы к числовому типу
+    numeric_cols = ["price", "area", "rooms", "level", "levels", "kitchen_area", "geo_lat", "geo_lon", "building_type",
+                    "object_type"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna()
+
+    # Удаление выбросов по цене
+    Q1 = df["price"].quantile(0.25)
+    Q3 = df["price"].quantile(0.75)
     IQR = Q3 - Q1
-    df = df[(df['price'] >= Q1 - 1.5 * IQR) & (df['price'] <= Q3 + 1.5 * IQR)]
+    df = df[(df["price"] >= Q1 - 1.5 * IQR) & (df["price"] <= Q3 + 1.5 * IQR)]
 
-    # Удаляем выбросы по площади
-    Q1_area = df['area'].quantile(0.25)
-    Q3_area = df['area'].quantile(0.75)
+    # Удаление выбросов по площади
+    Q1_area = df["area"].quantile(0.25)
+    Q3_area = df["area"].quantile(0.75)
     IQR_area = Q3_area - Q1_area
-    df = df[(df['area'] >= Q1_area - 1.5 * IQR_area) & (df['area'] <= Q3_area + 1.5 * IQR_area)]
-
-    # Кодирование категориальных признаков
-    if 'object_type' in df.columns:
-        from sklearn.preprocessing import LabelEncoder
-        le = LabelEncoder()
-        df['object_type'] = le.fit_transform(df['object_type'])
-
-    if 'region' in df.columns:
-        df = pd.get_dummies(df, columns=['region'], prefix='region', drop_first=True)
+    df = df[(df["area"] >= Q1_area - 1.5 * IQR_area) & (df["area"] <= Q3_area + 1.5 * IQR_area)]
 
     return df
 
@@ -62,26 +75,19 @@ def preprocess_data(df):
 # ======================
 def train_models(df):
     """
-    Обучение нескольких моделей (RandomForest, Gradient Boosting, XGBoost)
-    с последующим сохранением метрик и графиков.
-    Для упрощения, в примере используется один и тот же набор признаков.
+    Обучение нескольких моделей (RandomForest, Gradient Boosting, XGBoost) с использованием признаков:
+    rooms, area, kitchen_area, level, levels, building_type, object_type, geo_lat, geo_lon.
+    Сохраняет обученные модели и экспортирует метрики.
     """
-    # Определяем признаки и целевую переменную.
-    # В примере используем: area, rooms, kitchen_area, floor, total_floors
-    features = ['area', 'rooms', 'kitchen_area', 'floor', 'total_floors']
-    if 'object_type' in df.columns:
-        features.append('object_type')
-    # Добавляем one-hot признаки региона (начинаются с 'region_')
-    region_cols = [col for col in df.columns if col.startswith('region_')]
-    features += region_cols
-    target = 'price'
+    features = ["rooms", "area", "kitchen_area", "level", "levels", "building_type", "object_type", "geo_lat",
+                "geo_lon"]
+    target = "price"
 
     X = df[features]
     y = df[target]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Обучаем модели
     rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
     rf_model.fit(X_train, y_train)
 
@@ -97,7 +103,6 @@ def train_models(df):
         "XGBoost": xgb_model
     }
 
-    # Вычисляем и выводим метрики
     metrics = []
     for name, model in models.items():
         y_pred = model.predict(X_test)
@@ -112,22 +117,16 @@ def train_models(df):
         })
         print(f"{name}: MAE = {mae_val:.2f}, RMSE = {rmse_val:.2f}, R2 = {r2_val:.3f}")
 
-    # Сохраняем модель Random Forest как базовую для всех регионов
-    joblib.dump(rf_model, "model_moscow.pkl")
-    joblib.dump(rf_model, "model_spb.pkl")
-    joblib.dump(rf_model, "model_other.pkl")
+    # Сохраняем модели
+    joblib.dump(rf_model, "model_rf.pkl")
+    joblib.dump(gb_model, "model_gb.pkl")
+    joblib.dump(xgb_model, "model_xgb.pkl")
 
     metrics_df = pd.DataFrame(metrics)
     metrics_df.to_csv("model_metrics_comparison.csv", index=False)
     print("Метрики моделей сохранены в 'model_metrics_comparison.csv'")
 
-    # Сохраняем топ-5 признаков по корреляции с ценой
     corr_matrix = df.corr()
-    price_corr = corr_matrix['price'].abs().sort_values(ascending=False)
-    top5_corr = price_corr[1:6]
-    top5_corr.to_csv("top5_correlated_features.csv", header=["Correlation"])
-    print("Топ-5 коррелирующих признаков сохранены в 'top5_correlated_features.csv'")
-
     return models, features, X_test, y_test, corr_matrix
 
 
@@ -135,14 +134,7 @@ def train_models(df):
 # 3. Визуализация данных и результатов
 # ======================
 def plot_visualizations(df, corr_matrix, models, X_test, y_test):
-    """
-    Построение и сохранение графиков:
-      - Тепловая карта корреляций.
-      - Гистограмма распределения цен.
-      - Сравнение RMSE для обученных моделей.
-      - График фактических vs предсказанных цен для Random Forest.
-    """
-    # Тепловая карта
+    # Тепловая карта корреляций
     plt.figure(figsize=(10, 8))
     sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="coolwarm")
     plt.title("Матрица корреляций признаков")
@@ -150,9 +142,9 @@ def plot_visualizations(df, corr_matrix, models, X_test, y_test):
     plt.savefig("correlation_heatmap.png")
     plt.close()
 
-    # Распределение цен
+    # Гистограмма распределения цен
     plt.figure(figsize=(6, 4))
-    sns.histplot(df['price'], kde=True, bins=50)
+    sns.histplot(df["price"], kde=True, bins=50)
     plt.title("Распределение цен недвижимости")
     plt.xlabel("Цена")
     plt.ylabel("Количество объектов")
@@ -160,7 +152,7 @@ def plot_visualizations(df, corr_matrix, models, X_test, y_test):
     plt.savefig("price_distribution.png")
     plt.close()
 
-    # Сравнение RMSE моделей
+    # Сравнение RMSE для моделей
     model_names = list(models.keys())
     rmse_values = []
     for model in models.values():
@@ -192,7 +184,7 @@ def plot_visualizations(df, corr_matrix, models, X_test, y_test):
 
 
 # ======================
-# 4. Запуск анализа (тренировка, визуализация, экспорт результатов)
+# 4. Запуск анализа (обучение модели, визуализация, экспорт результатов)
 # ======================
 def run_analysis():
     print("Загрузка данных...")
@@ -210,60 +202,42 @@ def run_analysis():
 # 5. Интерактивное приложение на Streamlit
 # ======================
 def run_streamlit_app():
-    st.title("Прогноз стоимости недвижимости в России (2021)")
+    st.title("Прогноз стоимости недвижимости (2021)")
 
-    # Поля ввода параметров
-    rooms = st.number_input("Число комнат", min_value=1, max_value=10, value=2)
-    area = st.number_input("Площадь (кв.м)", min_value=10.0, max_value=500.0, value=50.0)
-    kitchen_area = st.number_input("Площадь кухни (кв.м)", min_value=0.0, max_value=200.0, value=10.0)
-    floor = st.number_input("Этаж", min_value=1, max_value=100, value=3)
-    total_floors = st.number_input("Этажность дома", min_value=1, max_value=100, value=10)
-
-    region = st.selectbox("Регион", ["Москва", "Санкт-Петербург", "Другой регион"])
-
-    # Определяем координаты по умолчанию для выбранного региона
-    if region == "Москва":
-        default_lat, default_lon = 55.7558, 37.6173
-    elif region == "Санкт-Петербург":
-        default_lat, default_lon = 59.9311, 30.3609
-    else:
-        default_lat, default_lon = 55.0, 82.9
-
-    lat = st.slider("Широта", min_value=0.0, max_value=90.0, value=default_lat)
-    lon = st.slider("Долгота", min_value=0.0, max_value=180.0, value=default_lon)
+    # Поля ввода для всех признаков
+    rooms = st.number_input("Количество комнат", min_value=1, max_value=10, value=1)
+    area = st.number_input("Площадь (кв.м)", min_value=10.0, max_value=500.0, value=30.0)
+    kitchen_area = st.number_input("Площадь кухни (кв.м)", min_value=0.0, max_value=200.0, value=5.0)
+    level = st.number_input("Этаж (номер текущего этажа)", min_value=1, max_value=100, value=15)
+    levels = st.number_input("Этажность здания", min_value=1, max_value=100, value=31)
+    building_type = st.number_input("Тип здания (код)", min_value=0, max_value=10, value=0)
+    object_type = st.number_input("Тип объекта (код)", min_value=0, max_value=10, value=2)
+    geo_lat = st.number_input("Широта", min_value=40.0, max_value=70.0, value=56.78, format="%.5f")
+    geo_lon = st.number_input("Долгота", min_value=30.0, max_value=100.0, value=60.70, format="%.5f")
 
     # Отображение местоположения на карте
-    location_df = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+    location_df = pd.DataFrame({"lat": [geo_lat], "lon": [geo_lon]})
     st.map(location_df)
 
-    # Загрузка модели для выбранного региона с использованием кэширования
+    # Загрузка модели (используем Random Forest)
     @st.cache(allow_output_mutation=True)
-    def load_model_for_region(region_name):
-        if region_name == "Москва":
-            model = joblib.load("model_moscow.pkl")
-        elif region_name == "Санкт-Петербург":
-            model = joblib.load("model_spb.pkl")
-        else:
-            model = joblib.load("model_other.pkl")
-        return model
+    def load_model():
+        return joblib.load("model_rf.pkl")
 
-    model = load_model_for_region(region)
+    model = load_model()
 
-    # При нажатии кнопки выполняется предсказание
     if st.button("Предсказать стоимость"):
-        # Формирование входного DataFrame с учетом тех же признаков, что использовались при обучении
         input_data = pd.DataFrame([{
-            "area": area,
             "rooms": rooms,
+            "area": area,
             "kitchen_area": kitchen_area,
-            "floor": floor,
-            "total_floors": total_floors,
-            "object_type": 0  # по умолчанию, например, вторичный рынок
+            "level": level,
+            "levels": levels,
+            "building_type": building_type,
+            "object_type": object_type,
+            "geo_lat": geo_lat,
+            "geo_lon": geo_lon
         }])
-        # Добавляем one-hot признаки для региона
-        input_data["region_Moscow"] = 1 if region == "Москва" else 0
-        input_data["region_SPb"] = 1 if region == "Санкт-Петербург" else 0
-
         predicted_price = model.predict(input_data)[0]
         st.metric(label="Предполагаемая стоимость (руб.)", value=f"{predicted_price:,.0f}")
 
