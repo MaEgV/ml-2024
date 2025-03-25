@@ -13,6 +13,7 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.experimental import enable_hist_gradient_boosting
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.ensemble import HistGradientBoostingRegressor
 from xgboost import XGBRegressor
 
@@ -42,15 +43,17 @@ def preprocess_data(df):
     - Удаление выбросов по цене и площади
     """
     # Удаляем ненужные столбцы
-    cols_to_drop = ["date", "postal_code", "street_id", "id_region", "house_id"]
+    cols_to_drop = ["date", "postal_code", "street_id", "house_id"]
     df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
 
     # Удаляем строки с пропусками в ключевых столбцах
-    df = df.dropna(subset=["price", "area", "rooms", "level", "levels", "kitchen_area", "geo_lat", "geo_lon"])
+    df = df.dropna(subset=["price", "area", "rooms", "level", "levels", "kitchen_area", "geo_lat", "geo_lon", 'building_type', 'object_type'])
+
+    # Кодируем категориальные признаки
+    df = encode_categorical_features(df)
 
     # Приводим столбцы к числовому типу
-    numeric_cols = ["price", "area", "rooms", "level", "levels", "kitchen_area", "geo_lat", "geo_lon", "building_type",
-                    "object_type"]
+    numeric_cols = ["price", "area", "rooms", "level", "levels", "kitchen_area", "geo_lat", "geo_lon"]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna()
@@ -69,6 +72,42 @@ def preprocess_data(df):
 
     return df
 
+# ======================
+# 1.1 Hot end encoding
+# ======================
+def encode_categorical_features(df: pd.DataFrame) -> pd.DataFrame:
+    building_type_encoder = OneHotEncoder(
+        categories=[[0, 1, 2, 3, 4, 5, 6]],
+        sparse_output=False
+    )
+    building_type_OHE = building_type_encoder.fit_transform(df[['building_type']])
+    building_type_column_names = [
+        'building_type_Dont_know',
+        'building_type_Other',
+        'building_type_Panel',
+        'building_type_Monolithic',
+        'building_type_Brick',
+        'building_type_Blocky',
+        'building_type_Wooden'
+    ]
+    building_type_df = pd.DataFrame(building_type_OHE, columns=building_type_column_names)
+
+    object_type_encoder = OneHotEncoder(
+        categories=[[0, 2]],
+        sparse_output=False
+    )
+    object_type_OHE = object_type_encoder.fit_transform(df[['object_type']])
+    object_type_column_names = [
+        'object_type_Secondary',
+        'object_type_New_Building'
+    ]
+    object_type_df = pd.DataFrame(object_type_OHE, columns=object_type_column_names)
+
+    df = (pd.concat([df, building_type_df, object_type_df], axis=1).
+          drop('building_type', axis=1).
+          drop('object_type', axis=1))
+
+    return df
 
 # ======================
 # 2. Обучение моделей
@@ -79,8 +118,7 @@ def train_models(df):
     rooms, area, kitchen_area, level, levels, building_type, object_type, geo_lat, geo_lon.
     Сохраняет обученные модели и экспортирует метрики.
     """
-    features = ["rooms", "area", "kitchen_area", "level", "levels", "building_type", "object_type", "geo_lat",
-                "geo_lon"]
+    features = list(filter(lambda x: x != "price",df.columns.to_list()))
     target = "price"
 
     X = df[features]
