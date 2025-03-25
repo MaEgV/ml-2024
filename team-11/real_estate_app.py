@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -99,15 +101,18 @@ def train_models(df):
     X = df[features]
     y = df[target]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.9, random_state=42)
 
-    rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+    logging.info("RandomForestRegressor was started")
+    rf_model = RandomForestRegressor(n_estimators=100, random_state=42, verbose=2)
     rf_model.fit(X_train, y_train)
 
-    gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
+    logging.info("GradientBoostingRegressor was started")
+    gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42, verbose=2)
     gb_model.fit(X_train, y_train)
 
-    xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
+    logging.info("XGBRegressor was started")
+    xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42, verbose=2)
     xgb_model.fit(X_train, y_train)
 
     models = {
