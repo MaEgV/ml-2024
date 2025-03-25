@@ -1,21 +1,17 @@
-import os
-import zipfile
-import subprocess
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import streamlit as st
 import joblib
-import argparse
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.experimental import enable_hist_gradient_boosting
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.ensemble import HistGradientBoostingRegressor
 from xgboost import XGBRegressor
+
+import mapping
 
 # Обучаем модели с использованием всех доступных ядер для тех, которые поддерживают n_jobs.
 rf_model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
@@ -76,32 +72,11 @@ def preprocess_data(df):
 # 1.1 Hot end encoding
 # ======================
 def encode_categorical_features(df: pd.DataFrame) -> pd.DataFrame:
-    building_type_encoder = OneHotEncoder(
-        categories=[[0, 1, 2, 3, 4, 5, 6]],
-        sparse_output=False
-    )
-    building_type_OHE = building_type_encoder.fit_transform(df[['building_type']])
-    building_type_column_names = [
-        'building_type_Dont_know',
-        'building_type_Other',
-        'building_type_Panel',
-        'building_type_Monolithic',
-        'building_type_Brick',
-        'building_type_Blocky',
-        'building_type_Wooden'
-    ]
-    building_type_df = pd.DataFrame(building_type_OHE, columns=building_type_column_names)
+    building_type_OHE = mapping.building_type_encoder.fit_transform(df[['building_type']])
+    building_type_df = pd.DataFrame(building_type_OHE, columns=mapping.building_type_column_names)
 
-    object_type_encoder = OneHotEncoder(
-        categories=[[0, 2]],
-        sparse_output=False
-    )
-    object_type_OHE = object_type_encoder.fit_transform(df[['object_type']])
-    object_type_column_names = [
-        'object_type_Secondary',
-        'object_type_New_Building'
-    ]
-    object_type_df = pd.DataFrame(object_type_OHE, columns=object_type_column_names)
+    object_type_OHE = mapping.object_type_encoder.fit_transform(df[['object_type']])
+    object_type_df = pd.DataFrame(object_type_OHE, columns=mapping.object_type_column_names)
 
     df = (pd.concat([df, building_type_df, object_type_df], axis=1).
           drop('building_type', axis=1).
@@ -236,62 +211,8 @@ def run_analysis():
     print("Анализ завершён.")
 
 
-# ======================
-# 5. Интерактивное приложение на Streamlit
-# ======================
-def run_streamlit_app():
-    st.title("Прогноз стоимости недвижимости (2021)")
-
-    # Поля ввода для всех признаков
-    rooms = st.number_input("Количество комнат", min_value=1, max_value=10, value=1)
-    area = st.number_input("Площадь (кв.м)", min_value=10.0, max_value=500.0, value=30.0)
-    kitchen_area = st.number_input("Площадь кухни (кв.м)", min_value=0.0, max_value=200.0, value=5.0)
-    level = st.number_input("Этаж (номер текущего этажа)", min_value=1, max_value=100, value=15)
-    levels = st.number_input("Этажность здания", min_value=1, max_value=100, value=31)
-    building_type = st.number_input("Тип здания (код)", min_value=0, max_value=10, value=0)
-    object_type = st.number_input("Тип объекта (код)", min_value=0, max_value=10, value=2)
-    geo_lat = st.number_input("Широта", min_value=40.0, max_value=70.0, value=56.78, format="%.5f")
-    geo_lon = st.number_input("Долгота", min_value=30.0, max_value=100.0, value=60.70, format="%.5f")
-
-    # Отображение местоположения на карте
-    location_df = pd.DataFrame({"lat": [geo_lat], "lon": [geo_lon]})
-    st.map(location_df)
-
-    # Загрузка модели (используем Random Forest)
-    @st.cache(allow_output_mutation=True)
-    def load_model():
-        return joblib.load("model_rf.pkl")
-
-    model = load_model()
-
-    if st.button("Предсказать стоимость"):
-        input_data = pd.DataFrame([{
-            "rooms": rooms,
-            "area": area,
-            "kitchen_area": kitchen_area,
-            "level": level,
-            "levels": levels,
-            "building_type": building_type,
-            "object_type": object_type,
-            "geo_lat": geo_lat,
-            "geo_lon": geo_lon
-        }])
-        predicted_price = model.predict(input_data)[0]
-        st.metric(label="Предполагаемая стоимость (руб.)", value=f"{predicted_price:,.0f}")
-
-
-# ======================
-# 6. Главная функция: выбор режима запуска
-# ======================
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--streamlit', action='store_true', help='Запустить Streamlit приложение')
-    args = parser.parse_args()
-
-    if args.streamlit:
-        run_streamlit_app()
-    else:
-        run_analysis()
+    run_analysis()
 
 
 if __name__ == '__main__':
