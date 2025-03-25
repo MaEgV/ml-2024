@@ -8,17 +8,12 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import OneHotEncoder
 from sklearn.ensemble import HistGradientBoostingRegressor
 from xgboost import XGBRegressor
+from catboost import CatBoostRegressor
+from lightgbm import LGBMRegressor
 
 import mapping
-
-# Обучаем модели с использованием всех доступных ядер для тех, которые поддерживают n_jobs.
-rf_model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
-gb_model = HistGradientBoostingRegressor(max_iter=100, random_state=42, loss='least_squares')
-xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42, n_jobs=-1)
 
 
 # ======================
@@ -101,24 +96,45 @@ def train_models(df):
     X = df[features]
     y = df[target]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.9, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.7, random_state=42)
 
     logging.info("RandomForestRegressor was started")
-    rf_model = RandomForestRegressor(n_estimators=100, random_state=42, verbose=2)
+    rf_model = RandomForestRegressor(n_estimators=100, random_state=42, verbose=3, n_jobs=-1)
     rf_model.fit(X_train, y_train)
+    joblib.dump(rf_model, "model_rf.pkl")
 
     logging.info("GradientBoostingRegressor was started")
-    gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42, verbose=2)
+    gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42, verbose=3)
     gb_model.fit(X_train, y_train)
+    joblib.dump(gb_model, "model_gb.pkl")
+
+    logging.info("HistGradientBoostingRegressor was started")
+    hgb_model = HistGradientBoostingRegressor(max_iter=100, learning_rate=0.1, random_state=42, loss='squared_error', verbose=3)
+    hgb_model.fit(X_train, y_train)
+    joblib.dump(hgb_model, "model_hgb.pkl")
 
     logging.info("XGBRegressor was started")
-    xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42, verbose=2)
+    xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42, verbose=3, n_jobs=-1)
     xgb_model.fit(X_train, y_train)
+    joblib.dump(xgb_model, "model_xgb.pkl")
+
+    logging.info("CatBoostRegressor was started")
+    cat_boost_model = CatBoostRegressor(iterations=100, learning_rate=0.1, random_state=42, thread_count=-1)
+    cat_boost_model.fit(X_train, y_train)
+    joblib.dump(cat_boost_model, "model_cb.pkl")
+
+    logging.info("LGBMRegressor was started")
+    lightgbm_model = LGBMRegressor(iterations=100, learning_rate=0.1, random_state=42, n_jobs=-1, thread_count=-1)
+    lightgbm_model.fit(X_train, y_train)
+    joblib.dump(lightgbm_model, "model_lightgbm.pkl")
 
     models = {
         "Random Forest": rf_model,
         "Gradient Boosting": gb_model,
-        "XGBoost": xgb_model
+        "HistGradientBoosting": hgb_model,
+        "XGBoost": xgb_model,
+        "CatBoost": cat_boost_model,
+        "LightGBM": lightgbm_model,
     }
 
     metrics = []
@@ -134,11 +150,6 @@ def train_models(df):
             "R2": round(r2_val, 3)
         })
         print(f"{name}: MAE = {mae_val:.2f}, RMSE = {rmse_val:.2f}, R2 = {r2_val:.3f}")
-
-    # Сохраняем модели
-    joblib.dump(rf_model, "model_rf.pkl")
-    joblib.dump(gb_model, "model_gb.pkl")
-    joblib.dump(xgb_model, "model_xgb.pkl")
 
     metrics_df = pd.DataFrame(metrics)
     metrics_df.to_csv("res/model_metrics_comparison.csv", index=False)
@@ -217,6 +228,7 @@ def run_analysis():
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     run_analysis()
 
 

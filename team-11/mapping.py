@@ -4,11 +4,12 @@ from sklearn.preprocessing import OneHotEncoder
 # one hot encoding mapping
 building_type_encoder = OneHotEncoder(
     categories=[[0, 1, 2, 3, 4, 5, 6]],
-    sparse_output=False
+    sparse_output=False,
+    drop='first'
 )
 
 building_type_column_names = [
-        'building_type_Dont_know',
+        # 'building_type_Dont_know',
         'building_type_Other',
         'building_type_Panel',
         'building_type_Monolithic',
@@ -19,11 +20,12 @@ building_type_column_names = [
 
 object_type_encoder = OneHotEncoder(
         categories=[[0, 2]],
-        sparse_output=False
+        sparse_output=False,
+        drop='first'
     )
 
 object_type_column_names = [
-    'object_type_Secondary',
+    # 'object_type_Secondary',
     'object_type_New_Building'
 ]
 
